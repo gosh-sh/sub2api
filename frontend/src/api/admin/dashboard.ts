@@ -47,6 +47,9 @@ export async function getRealtimeMetrics(): Promise<{
 export interface TrendParams {
   start_date?: string
   end_date?: string
+  /** RFC3339 exact bounds, [from, to); they take precedence over start_date / end_date. */
+  from?: string
+  to?: string
   granularity?: 'day' | 'hour'
   user_id?: number
   api_key_id?: number
@@ -80,6 +83,9 @@ export async function getUsageTrend(params?: TrendParams): Promise<TrendResponse
 export interface ModelStatsParams {
   start_date?: string
   end_date?: string
+  /** RFC3339 exact bounds, [from, to); they take precedence over start_date / end_date. */
+  from?: string
+  to?: string
   user_id?: number
   api_key_id?: number
   model?: string
@@ -246,7 +252,7 @@ export interface UserTrendResponse {
 }
 
 export interface UserSpendingRankingParams
-  extends Pick<TrendParams, 'start_date' | 'end_date'> {
+  extends Pick<TrendParams, 'start_date' | 'end_date' | 'from' | 'to'> {
   limit?: number
 }
 

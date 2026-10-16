@@ -11,6 +11,9 @@
               <DateRangePicker
                 v-model:start-date="startDate"
                 v-model:end-date="endDate"
+                v-model:start-time="startTime"
+                v-model:end-time="endTime"
+                with-time
                 @change="onDateRangeChange"
               />
             </div>
@@ -191,6 +194,7 @@ import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'; import { adminAPI } from '@/api/admin'; import { adminUsageAPI } from '@/api/admin/usage'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatReasoningEffort } from '@/utils/format'
+import { exactRangeBounds } from '@/utils/exactRange'
 import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usageRequestType'
 import AppLayout from '@/components/layout/AppLayout.vue'; import Pagination from '@/components/common/Pagination.vue'; import Select from '@/components/common/Select.vue'; import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; import UsageFilters from '@/components/admin/usage/UsageFilters.vue'
@@ -298,6 +302,8 @@ const getGranularityForRange = (start: string, end: string): 'day' | 'hour' => {
 }
 const defaultRange = getLast24HoursRangeDates()
 const startDate = ref(defaultRange.start); const endDate = ref(defaultRange.end)
+// Optional HH:MM bounds; empty means whole days.
+const startTime = ref(''); const endTime = ref('')
 const filters = ref<AdminUsageQueryParams>({ user_id: undefined, model: undefined, group_id: undefined, request_type: undefined, native_compaction_v2: null, billing_type: null, start_date: startDate.value, end_date: endDate.value })
 const pagination = reactive({ page: 1, page_size: getPersistedPageSize(), total: 0 })
 const sortState = reactive({
@@ -358,13 +364,23 @@ const loadRouteUserFilterLabel = async () => {
   }
 }
 
-const onDateRangeChange = (range: { startDate: string; endDate: string; preset: string | null }) => {
+const onDateRangeChange = (range: {
+  startDate: string
+  endDate: string
+  startTime?: string
+  endTime?: string
+  preset: string | null
+}) => {
   startDate.value = range.startDate
   endDate.value = range.endDate
+  // A time of day adds exact from / to bounds; whole days clear them.
   filters.value = {
     ...filters.value,
     start_date: range.startDate,
-    end_date: range.endDate
+    end_date: range.endDate,
+    from: undefined,
+    to: undefined,
+    ...exactRangeBounds(range.startDate, range.endDate, range.startTime ?? '', range.endTime ?? '')
   }
   granularity.value = getGranularityForRange(range.startDate, range.endDate)
   applyFilters()
@@ -445,6 +461,8 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
     const baseParams = {
       start_date: filters.value.start_date || startDate.value,
       end_date: filters.value.end_date || endDate.value,
+      from: filters.value.from,
+      to: filters.value.to,
       user_id: filters.value.user_id,
       model: filters.value.model,
       api_key_id: filters.value.api_key_id,
@@ -495,6 +513,8 @@ const loadChartData = async () => {
     const snapshot = await adminAPI.dashboard.getSnapshotV2({
       start_date: filters.value.start_date || startDate.value,
       end_date: filters.value.end_date || endDate.value,
+      from: filters.value.from,
+      to: filters.value.to,
       granularity: granularity.value,
       user_id: filters.value.user_id,
       model: filters.value.model,
@@ -544,6 +564,8 @@ const resetFilters = () => {
   const range = getLast24HoursRangeDates()
   startDate.value = range.start
   endDate.value = range.end
+  startTime.value = ''
+  endTime.value = ''
   filters.value = { start_date: startDate.value, end_date: endDate.value, request_type: undefined, native_compaction_v2: null, billing_type: null, billing_mode: undefined }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
   applyFilters()

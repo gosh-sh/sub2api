@@ -573,6 +573,28 @@ func TestShouldUsePreaggregatedTrendRejectsNativeCompactionV2Filter(t *testing.T
 	require.False(t, shouldUsePreaggregatedTrend("day", 0, 0, 0, 0, "", nil, nil, nil, "", nil, &nativeCompactionV2))
 }
 
+func TestTrendRangeOnHourBoundaries(t *testing.T) {
+	hour := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	require.True(t, trendRangeOnHourBoundaries(hour, hour.Add(time.Hour)))
+	require.False(t, trendRangeOnHourBoundaries(hour.Add(30*time.Minute), hour.Add(time.Hour)))
+	require.False(t, trendRangeOnHourBoundaries(hour, hour.Add(90*time.Minute)))
+}
+
+func TestUsageLogRepositoryGetUsageTrendReadsLogsForPartialHours(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+	start := time.Date(2026, 10, 12, 12, 30, 0, 0, time.UTC)
+	end := time.Date(2026, 10, 12, 13, 30, 0, 0, time.UTC)
+
+	mock.ExpectQuery("(?s)FROM usage_logs\\s+WHERE created_at >= \\$1 AND created_at < \\$2").
+		WithArgs(start, end).
+		WillReturnRows(sqlmock.NewRows([]string{"date", "requests", "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens", "total_tokens", "cost", "actual_cost"}))
+
+	_, err := repo.GetUsageTrendWithFilters(context.Background(), start, end, "hour", 0, 0, 0, 0, "", nil, nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestUsageLogRepositoryGetModelStatsWithFiltersRequestTypePriority(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}

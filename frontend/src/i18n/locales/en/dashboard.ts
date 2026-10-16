@@ -1052,6 +1052,9 @@ export default {
     custom: 'Custom',
     startDate: 'Start Date',
     endDate: 'End Date',
+    startTime: 'Start time',
+    endTime: 'End time',
+    timeHint: 'Optional. Empty means the whole day; the end time is not included.',
     apply: 'Apply',
     selectDateRange: 'Select date range'
   },
