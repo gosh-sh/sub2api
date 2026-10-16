@@ -32,7 +32,9 @@ func NewDashboardHandler(dashboardService *service.DashboardService, aggregation
 }
 
 // parseTimeRange parses start_date, end_date query parameters
-// Uses user's timezone if provided, otherwise falls back to server timezone
+// Uses user's timezone if provided, otherwise falls back to server timezone.
+// from / to (RFC3339) select exact instants and take precedence over the dates; the range is [from, to).
+// Like the dates, an unparsable value falls back to the default bound.
 func parseTimeRange(c *gin.Context) (time.Time, time.Time) {
 	userTZ := c.Query("timezone") // Get user's timezone from request
 	now := timezone.NowInUserLocation(userTZ)
@@ -61,7 +63,27 @@ func parseTimeRange(c *gin.Context) (time.Time, time.Time) {
 		endTime = timezone.StartOfDayInUserLocation(now.AddDate(0, 0, 1), userTZ)
 	}
 
+	from, to := parseExactRangeBounds(c)
+	if from != nil {
+		startTime = *from
+	}
+	if to != nil {
+		endTime = *to
+	}
+
 	return startTime, endTime
+}
+
+// parseExactRangeBounds reads the optional RFC3339 from / to query values; an absent or
+// unparsable value is nil. Callers let them override their date-based bounds.
+func parseExactRangeBounds(c *gin.Context) (from, to *time.Time) {
+	if t, err := time.Parse(time.RFC3339, strings.TrimSpace(c.Query("from"))); err == nil {
+		from = &t
+	}
+	if t, err := time.Parse(time.RFC3339, strings.TrimSpace(c.Query("to"))); err == nil {
+		to = &t
+	}
+	return from, to
 }
 
 func parseOptionalBoolDashboardFilter(c *gin.Context, name string) (*bool, error) {

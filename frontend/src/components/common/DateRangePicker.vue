@@ -47,6 +47,17 @@
               class="date-picker-input"
               @change="onDateChange"
             />
+            <template v-if="withTime">
+              <label class="date-picker-label date-picker-time-label">{{ t('dates.startTime') }}</label>
+              <input
+                type="time"
+                step="60"
+                v-model="localStartTime"
+                class="date-picker-input"
+                data-testid="date-picker-start-time"
+                @change="onDateChange"
+              />
+            </template>
           </div>
           <div class="date-picker-separator">
             <Icon name="arrowRight" size="sm" class="text-gray-400" />
@@ -61,8 +72,20 @@
               class="date-picker-input"
               @change="onDateChange"
             />
+            <template v-if="withTime">
+              <label class="date-picker-label date-picker-time-label">{{ t('dates.endTime') }}</label>
+              <input
+                type="time"
+                step="60"
+                v-model="localEndTime"
+                class="date-picker-input"
+                data-testid="date-picker-end-time"
+                @change="onDateChange"
+              />
+            </template>
           </div>
         </div>
+        <p v-if="withTime" class="date-picker-hint">{{ t('dates.timeHint') }}</p>
 
         <!-- Apply button -->
         <div class="date-picker-actions">
@@ -89,15 +112,29 @@ interface DatePreset {
 interface Props {
   startDate: string
   endDate: string
+  // Optional HH:MM bounds, shown only with `withTime`. Empty means the whole day.
+  startTime?: string
+  endTime?: string
+  withTime?: boolean
 }
 
 interface Emits {
   (e: 'update:startDate', value: string): void
   (e: 'update:endDate', value: string): void
-  (e: 'change', range: { startDate: string; endDate: string; preset: string | null }): void
+  (e: 'update:startTime', value: string): void
+  (e: 'update:endTime', value: string): void
+  (
+    e: 'change',
+    // startTime / endTime are present only with `withTime`.
+    range: { startDate: string; endDate: string; startTime?: string; endTime?: string; preset: string | null }
+  ): void
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  startTime: '',
+  endTime: '',
+  withTime: false
+})
 const emit = defineEmits<Emits>()
 
 const { t, locale } = useI18n()
@@ -106,6 +143,8 @@ const isOpen = ref(false)
 const containerRef = ref<HTMLElement | null>(null)
 const localStartDate = ref(props.startDate)
 const localEndDate = ref(props.endDate)
+const localStartTime = ref(props.startTime)
+const localEndTime = ref(props.endTime)
 const activePreset = ref<string | null>('last24Hours')
 
 const today = () => formatDateToString(new Date())
@@ -218,6 +257,13 @@ const displayValue = computed(() => {
   }
 
   if (localStartDate.value && localEndDate.value) {
+    if (hasTime()) {
+      const start = `${formatDate(localStartDate.value)} ${localStartTime.value || '00:00'}`
+      const end = localEndTime.value
+        ? `${formatDate(localEndDate.value)} ${localEndTime.value}`
+        : `${formatDate(localEndDate.value)} 24:00`
+      return `${start} - ${end}`
+    }
     if (localStartDate.value === localEndDate.value) {
       return formatDate(localStartDate.value)
     }
@@ -237,16 +283,22 @@ const isPresetActive = (preset: DatePreset): boolean => {
   return activePreset.value === preset.value
 }
 
+const hasTime = (): boolean => props.withTime && Boolean(localStartTime.value || localEndTime.value)
+
 const selectPreset = (preset: DatePreset) => {
   const range = preset.getRange()
   localStartDate.value = range.start
   localEndDate.value = range.end
+  // Presets are whole days.
+  localStartTime.value = ''
+  localEndTime.value = ''
   activePreset.value = preset.value
 }
 
 const onDateChange = () => {
-  // Check if current dates match any preset
+  // Check if current dates match any preset; a time of day makes the range custom.
   activePreset.value = null
+  if (hasTime()) return
   for (const preset of presets) {
     const range = preset.getRange()
     if (range.start === localStartDate.value && range.end === localEndDate.value) {
@@ -263,9 +315,14 @@ const toggle = () => {
 const apply = () => {
   emit('update:startDate', localStartDate.value)
   emit('update:endDate', localEndDate.value)
+  if (props.withTime) {
+    emit('update:startTime', localStartTime.value)
+    emit('update:endTime', localEndTime.value)
+  }
   emit('change', {
     startDate: localStartDate.value,
     endDate: localEndDate.value,
+    ...(props.withTime ? { startTime: localStartTime.value, endTime: localEndTime.value } : {}),
     preset: activePreset.value
   })
   isOpen.value = false
@@ -288,6 +345,8 @@ watch(isOpen, (open) => {
   if (open) return
   localStartDate.value = props.startDate
   localEndDate.value = props.endDate
+  localStartTime.value = props.startTime
+  localEndTime.value = props.endTime
   onDateChange()
 }, { flush: 'post' })
 
@@ -304,6 +363,15 @@ watch(
   () => props.endDate,
   (val) => {
     localEndDate.value = val
+    onDateChange()
+  }
+)
+
+watch(
+  () => [props.startTime, props.endTime],
+  ([start, end]) => {
+    localStartTime.value = start
+    localEndTime.value = end
     onDateChange()
   }
 )
@@ -411,6 +479,14 @@ onUnmounted(() => {
 
 .date-picker-separator {
   @apply flex items-center justify-center pb-1;
+}
+
+.date-picker-time-label {
+  @apply mt-2;
+}
+
+.date-picker-hint {
+  @apply px-3 pb-2 text-xs text-gray-400 dark:text-gray-500;
 }
 
 .date-picker-actions {

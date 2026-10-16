@@ -182,6 +182,15 @@ func (h *UsageHandler) List(c *gin.Context) {
 		endTime = &t
 	}
 
+	// Exact from / to (RFC3339) take precedence over the dates.
+	from, to := parseExactRangeBounds(c)
+	if from != nil {
+		startTime = from
+	}
+	if to != nil {
+		endTime = to
+	}
+
 	params := pagination.PaginationParams{
 		Page:      page,
 		PageSize:  pageSize,
@@ -345,6 +354,15 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 			startTime = timezone.StartOfDayInUserLocation(now, userTZ)
 		}
 		endTime = now
+	}
+
+	// Exact from / to (RFC3339) take precedence over the dates and the period.
+	from, to := parseExactRangeBounds(c)
+	if from != nil {
+		startTime = *from
+	}
+	if to != nil {
+		endTime = *to
 	}
 
 	// Build filters and call GetStatsWithFilters

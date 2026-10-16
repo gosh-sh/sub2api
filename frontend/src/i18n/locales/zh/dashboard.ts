@@ -1056,6 +1056,9 @@ export default {
     custom: '自定义',
     startDate: '开始日期',
     endDate: '结束日期',
+    startTime: '开始时间',
+    endTime: '结束时间',
+    timeHint: '可选。留空表示全天；不包含结束时间本身。',
     apply: '应用',
     selectDateRange: '选择日期范围'
   },

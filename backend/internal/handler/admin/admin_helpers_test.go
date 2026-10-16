@@ -32,6 +32,30 @@ func TestParseTimeRange(t *testing.T) {
 	require.False(t, end.IsZero())
 }
 
+func TestParseTimeRangeFromToOverrideDates(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet,
+		"/?start_date=2024-01-01&end_date=2024-01-31&timezone=UTC&from=2024-01-10T15:30:00%2B03:00&to=2024-01-10T13:30:00Z", nil)
+
+	start, end := parseTimeRange(c)
+
+	require.True(t, start.Equal(time.Date(2024, 1, 10, 12, 30, 0, 0, time.UTC)))
+	require.True(t, end.Equal(time.Date(2024, 1, 10, 13, 30, 0, 0, time.UTC)))
+}
+
+func TestParseTimeRangeIgnoresUnparsableFromTo(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet,
+		"/?start_date=2024-01-01&end_date=2024-01-02&timezone=UTC&from=2024-01-01&to=12:30", nil)
+
+	start, end := parseTimeRange(c)
+
+	require.Equal(t, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), start)
+	require.Equal(t, time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), end)
+}
+
 func TestParseOpsViewParam(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
