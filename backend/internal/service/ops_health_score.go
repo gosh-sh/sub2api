@@ -13,6 +13,14 @@ import (
 // - Avoids double-counting (e.g., DB failure affects both infra and business metrics)
 // - Conservative + stable: penalize clear degradations; avoid overreacting to missing/idle data.
 func computeDashboardHealthScore(now time.Time, overview *OpsDashboardOverview) int {
+	return computeDashboardHealthScoreWithThresholds(now, overview, nil)
+}
+
+// computeDashboardHealthScoreWithThresholds scores business health against the operator's metric
+// thresholds (the same ones that turn the dashboard cards red). A metric at its threshold scores 0;
+// an error rate at a tenth of its threshold, or a TTFT P99 at a third of its threshold, scores 100.
+// A missing threshold falls back to the built-in curve: errors 1% -> 100, 10% -> 0; TTFT 1s -> 100, 3s -> 0.
+func computeDashboardHealthScoreWithThresholds(now time.Time, overview *OpsDashboardOverview, thresholds *OpsMetricThresholds) int {
 	if overview == nil {
 		return 0
 	}
@@ -23,7 +31,7 @@ func computeDashboardHealthScore(now time.Time, overview *OpsDashboardOverview) 
 		return 100
 	}
 
-	businessHealth := computeBusinessHealth(overview)
+	businessHealth := computeBusinessHealthWithThresholds(overview, thresholds)
 	infraHealth := computeInfraHealth(now, overview)
 
 	// Weighted combination: 70% business + 30% infrastructure
@@ -31,39 +39,59 @@ func computeDashboardHealthScore(now time.Time, overview *OpsDashboardOverview) 
 	return int(math.Round(clampFloat64(score, 0, 100)))
 }
 
-// computeBusinessHealth calculates business health score (0-100)
-// Components: Error Rate (50%) + TTFT (50%)
+// computeBusinessHealth calculates business health score (0-100) on the built-in curves.
 func computeBusinessHealth(overview *OpsDashboardOverview) float64 {
-	// Error rate score: 1% → 100, 10% → 0 (linear)
-	// Combines request errors and upstream errors
-	errorScore := 100.0
-	errorPct := clampFloat64(overview.ErrorRate*100, 0, 100)
-	upstreamPct := clampFloat64(overview.UpstreamErrorRate*100, 0, 100)
-	combinedErrorPct := math.Max(errorPct, upstreamPct) // Use worst case
-	if combinedErrorPct > 1.0 {
-		if combinedErrorPct <= 10.0 {
-			errorScore = (10.0 - combinedErrorPct) / 9.0 * 100
-		} else {
-			errorScore = 0
-		}
+	return computeBusinessHealthWithThresholds(overview, nil)
+}
+
+// computeBusinessHealthWithThresholds calculates business health score (0-100)
+// Components: Error Rate (50%) + TTFT (50%)
+func computeBusinessHealthWithThresholds(overview *OpsDashboardOverview, thresholds *OpsMetricThresholds) float64 {
+	const (
+		defaultErrorRatePercentMax = 10.0
+		defaultTTFTp99MsMax        = 3000.0
+	)
+	requestErrMax, upstreamErrMax, ttftMax := defaultErrorRatePercentMax, defaultErrorRatePercentMax, defaultTTFTp99MsMax
+	if thresholds != nil {
+		requestErrMax = positiveOr(thresholds.RequestErrorRatePercentMax, requestErrMax)
+		upstreamErrMax = positiveOr(thresholds.UpstreamErrorRatePercentMax, upstreamErrMax)
+		ttftMax = positiveOr(thresholds.TTFTp99MsMax, ttftMax)
 	}
 
-	// TTFT score: 1s → 100, 3s → 0 (linear)
-	// Time to first token is critical for user experience
+	// Error rate score: each rate against its own threshold, the worse one counts.
+	errorPct := clampFloat64(overview.ErrorRate*100, 0, 100)
+	upstreamPct := clampFloat64(overview.UpstreamErrorRate*100, 0, 100)
+	errorScore := math.Min(
+		linearScore(errorPct, requestErrMax/10, requestErrMax),
+		linearScore(upstreamPct, upstreamErrMax/10, upstreamErrMax),
+	)
+
+	// TTFT score: time to first token is critical for user experience.
 	ttftScore := 100.0
 	if overview.TTFT.P99 != nil {
-		p99 := float64(*overview.TTFT.P99)
-		if p99 > 1000 {
-			if p99 <= 3000 {
-				ttftScore = (3000 - p99) / 2000 * 100
-			} else {
-				ttftScore = 0
-			}
-		}
+		ttftScore = linearScore(float64(*overview.TTFT.P99), ttftMax/3, ttftMax)
 	}
 
 	// Weighted combination: 50% error rate + 50% TTFT
 	return errorScore*0.5 + ttftScore*0.5
+}
+
+// linearScore is 100 at or below good, 0 at or above bad, and linear in between.
+func linearScore(value, good, bad float64) float64 {
+	if value <= good {
+		return 100
+	}
+	if value >= bad {
+		return 0
+	}
+	return (bad - value) / (bad - good) * 100
+}
+
+func positiveOr(v *float64, fallback float64) float64 {
+	if v != nil && *v > 0 {
+		return *v
+	}
+	return fallback
 }
 
 // computeInfraHealth calculates infrastructure health score (0-100)

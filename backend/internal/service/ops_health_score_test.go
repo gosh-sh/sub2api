@@ -440,3 +440,47 @@ func TestComputeInfraHealth(t *testing.T) {
 func timePtr(v time.Time) *time.Time { return &v }
 
 func stringPtr(v string) *string { return &v }
+
+func TestComputeDashboardHealthScore_FollowsMetricThresholds(t *testing.T) {
+	t.Parallel()
+
+	// A pooled gateway that fails over: upstream errors are recovered, clients see 0.18%.
+	ov := &OpsDashboardOverview{
+		RequestCountTotal: 2299,
+		RequestCountSLA:   2299,
+		ErrorRate:         0.0018,
+		UpstreamErrorRate: 0.1564,
+		TTFT:              OpsPercentiles{P99: intPtr(14_735)},
+	}
+	now := time.Now().UTC()
+
+	// Built-in curves: 15.6% upstream errors and a 14.7s TTFT P99 zero the business half.
+	require.Equal(t, 30, computeDashboardHealthScore(now, ov))
+
+	// Operator thresholds: TTFT P99 20s, upstream 25%, request 5%.
+	ttft, upstream, request := 20_000.0, 25.0, 5.0
+	thresholds := &OpsMetricThresholds{TTFTp99MsMax: &ttft, UpstreamErrorRatePercentMax: &upstream, RequestErrorRatePercentMax: &request}
+	require.Equal(t, 58, computeDashboardHealthScoreWithThresholds(now, ov, thresholds))
+
+	// Nothing above its tenth (errors) or third (TTFT) of the threshold: full score.
+	calm := *ov
+	calm.UpstreamErrorRate = 0.02
+	calm.TTFT = OpsPercentiles{P99: intPtr(6_000)}
+	require.Equal(t, 100, computeDashboardHealthScoreWithThresholds(now, &calm, thresholds))
+}
+
+func TestComputeDashboardHealthScore_NilThresholdsKeepBuiltInCurve(t *testing.T) {
+	t.Parallel()
+
+	ov := &OpsDashboardOverview{
+		RequestCountTotal: 100,
+		RequestCountSLA:   100,
+		ErrorRate:         0.05,
+		UpstreamErrorRate: 0.02,
+		TTFT:              OpsPercentiles{P99: intPtr(2_000)},
+	}
+	now := time.Now().UTC()
+	// errors 5% -> 55.6, TTFT 2s -> 50, business 52.8 -> 0.7*52.8 + 0.3*100 = 67
+	require.Equal(t, 67, computeDashboardHealthScoreWithThresholds(now, ov, nil))
+	require.Equal(t, computeDashboardHealthScore(now, ov), computeDashboardHealthScoreWithThresholds(now, ov, &OpsMetricThresholds{}))
+}
