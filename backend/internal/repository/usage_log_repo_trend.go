@@ -282,7 +282,8 @@ func (r *usageLogRepository) GetUsageTrendWithUsageFilters(ctx context.Context, 
 }
 
 func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, modelSource string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool, nativeCompactionV2 *bool) (results []TrendDataPoint, err error) {
-	if shouldUsePreaggregatedTrend(granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, billingMode, upstreamModelMismatch, nativeCompactionV2) {
+	if trendRangeOnHourBoundaries(startTime, endTime) &&
+		shouldUsePreaggregatedTrend(granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, billingMode, upstreamModelMismatch, nativeCompactionV2) {
 		aggregated, aggregatedErr := r.getUsageTrendFromAggregates(ctx, startTime, endTime, granularity)
 		if aggregatedErr == nil && len(aggregated) > 0 {
 			return aggregated, nil
@@ -354,6 +355,12 @@ func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, start
 		return nil, err
 	}
 	return results, nil
+}
+
+// trendRangeOnHourBoundaries reports whether both bounds fall on whole hours. The hourly and daily
+// aggregates start on whole hours, so a range like 12:30-13:30 must be read from usage_logs instead.
+func trendRangeOnHourBoundaries(startTime, endTime time.Time) bool {
+	return startTime.Truncate(time.Hour).Equal(startTime) && endTime.Truncate(time.Hour).Equal(endTime)
 }
 
 func shouldUsePreaggregatedTrend(granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8, billingMode string, upstreamModelMismatch *bool, nativeCompactionV2 *bool) bool {

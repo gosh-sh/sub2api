@@ -82,6 +82,9 @@ export interface CreateUsageCleanupTaskRequest {
 
 export interface AdminUsageQueryParams extends UsageQueryParams {
   user_id?: number
+  /** RFC3339 exact bounds, [from, to); they take precedence over start_date / end_date. */
+  from?: string
+  to?: string
   exact_total?: boolean
   billing_mode?: string
   upstream_model_mismatch?: boolean
@@ -129,6 +132,8 @@ export async function getStats(params: {
   period?: string
   start_date?: string
   end_date?: string
+  from?: string
+  to?: string
   timezone?: string
   nocache?: number
 }): Promise<AdminUsageStatsResponse> {

@@ -15,6 +15,9 @@ const messages: Record<string, string> = {
   'dates.lastMonth': 'Last Month',
   'dates.startDate': 'Start Date',
   'dates.endDate': 'End Date',
+  'dates.startTime': 'Start time',
+  'dates.endTime': 'End time',
+  'dates.timeHint': 'Optional.',
   'dates.apply': 'Apply',
   'dates.selectDateRange': 'Select date range'
 }
@@ -92,5 +95,62 @@ describe('DateRangePicker', () => {
         preset: 'last24Hours'
       }
     ])
+  })
+
+  it('hides the time fields unless withTime is set', async () => {
+    const today = formatLocalDate(new Date())
+    const wrapper = mount(DateRangePicker, {
+      props: { startDate: today, endDate: today },
+      global: { stubs: { Icon: true } }
+    })
+
+    await wrapper.find('.date-picker-trigger').trigger('click')
+
+    expect(wrapper.find('[data-testid="date-picker-start-time"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="date-picker-end-time"]').exists()).toBe(false)
+  })
+
+  it('emits the chosen times as a custom range', async () => {
+    const wrapper = mount(DateRangePicker, {
+      props: { startDate: '2026-10-12', endDate: '2026-10-12', withTime: true },
+      global: { stubs: { Icon: true } }
+    })
+
+    await wrapper.find('.date-picker-trigger').trigger('click')
+    const start = wrapper.find('[data-testid="date-picker-start-time"]')
+    const end = wrapper.find('[data-testid="date-picker-end-time"]')
+    await start.setValue('12:30')
+    await start.trigger('change')
+    await end.setValue('13:30')
+    await end.trigger('change')
+    await wrapper.find('.date-picker-apply').trigger('click')
+
+    expect(wrapper.emitted('update:startTime')?.[0]).toEqual(['12:30'])
+    expect(wrapper.emitted('update:endTime')?.[0]).toEqual(['13:30'])
+    expect(wrapper.emitted('change')?.[0]).toEqual([
+      {
+        startDate: '2026-10-12',
+        endDate: '2026-10-12',
+        startTime: '12:30',
+        endTime: '13:30',
+        preset: null
+      }
+    ])
+  })
+
+  it('clears the times when a preset is chosen', async () => {
+    const wrapper = mount(DateRangePicker, {
+      props: { startDate: '2026-10-12', endDate: '2026-10-12', startTime: '12:30', endTime: '13:30', withTime: true },
+      global: { stubs: { Icon: true } }
+    })
+
+    await wrapper.find('.date-picker-trigger').trigger('click')
+    const today = wrapper.findAll('.date-picker-preset').find((node) => node.text().includes('Today'))
+    await today!.trigger('click')
+    await wrapper.find('.date-picker-apply').trigger('click')
+
+    expect(wrapper.emitted('update:startTime')?.[0]).toEqual([''])
+    expect(wrapper.emitted('update:endTime')?.[0]).toEqual([''])
+    expect(wrapper.emitted('change')?.[0]?.[0]).toMatchObject({ preset: 'today', startTime: '', endTime: '' })
   })
 })

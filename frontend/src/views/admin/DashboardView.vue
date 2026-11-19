@@ -276,6 +276,9 @@
                 <DateRangePicker
                   v-model:start-date="startDate"
                   v-model:end-date="endDate"
+                  v-model:start-time="startTime"
+                  v-model:end-time="endTime"
+                  with-time
                   @change="onDateRangeChange"
                 />
               </div>
@@ -370,6 +373,7 @@ import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { exactRangeBounds } from '@/utils/exactRange'
 
 import {
   Chart as ChartJS,
@@ -437,6 +441,16 @@ const granularity = ref<'day' | 'hour'>('hour')
 const defaultRange = getLast24HoursRangeDates()
 const startDate = ref(defaultRange.start)
 const endDate = ref(defaultRange.end)
+// Optional HH:MM bounds; empty means whole days.
+const startTime = ref('')
+const endTime = ref('')
+
+// Whole days go as start_date / end_date; a time of day adds exact from / to bounds.
+const rangeParams = () => ({
+  start_date: startDate.value,
+  end_date: endDate.value,
+  ...exactRangeBounds(startDate.value, endDate.value, startTime.value, endTime.value)
+})
 
 // Granularity options for Select component
 const granularityOptions = computed(() => [
@@ -663,8 +677,7 @@ const loadDashboardSnapshot = async (includeStats: boolean) => {
   chartsLoading.value = true
   try {
     const response = await adminAPI.dashboard.getSnapshotV2({
-      start_date: startDate.value,
-      end_date: endDate.value,
+      ...rangeParams(),
       granularity: granularity.value,
       include_stats: includeStats,
       include_trend: true,
@@ -702,8 +715,7 @@ const loadUsersTrend = async () => {
   userTrendLoading.value = true
   try {
     const response = await adminAPI.dashboard.getUserUsageTrend({
-      start_date: startDate.value,
-      end_date: endDate.value,
+      ...rangeParams(),
       granularity: granularity.value,
       limit: 12,
       metric: userTrendMetric.value
@@ -727,8 +739,7 @@ const loadUserSpendingRanking = async () => {
   rankingError.value = false
   try {
     const response = await adminAPI.dashboard.getUserSpendingRanking({
-      start_date: startDate.value,
-      end_date: endDate.value,
+      ...rangeParams(),
       limit: rankingLimit
     })
     if (currentSeq !== rankingLoadSeq) return
